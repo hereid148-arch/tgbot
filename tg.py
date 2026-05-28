@@ -1,3 +1,4 @@
+import os
 import asyncio
 import aiohttp
 import urllib.parse
@@ -5,154 +6,94 @@ from io import BytesIO
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message
 from aiogram.filters import Command
+from flask import Flask
+import threading
 
 # ========== НАСТРОЙКИ ==========
-BOT_TOKEN = "8838895544:AAEW6rnTh7gzVz7xIqDwUdBUdpQEQ-bfh4Q"  # 👈 ЗАМЕНИТЕ НА ТОКЕН ОТ @BotFather
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
+if not BOT_TOKEN:
+    print("❌ Ошибка: BOT_TOKEN не найден в переменных окружения!")
+    exit(1)
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ========== ГЕНЕРАЦИЯ КАРТИНКИ ==========
+# ========== ВЕБ-СЕРВЕР ДЛЯ RENDER ==========
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Бот работает!"
+
+def run_web():
+    app.run(host='0.0.0.0', port=8080)
+
+# ========== ГЕНЕРАЦИЯ КАРТИНОК ==========
 async def generate_image(prompt: str) -> BytesIO | None:
-    """Генерация изображения через Pollinations.ai (бесплатно, без ключа)"""
     async with aiohttp.ClientSession() as session:
         try:
-            # Кодируем текст запроса для URL
-            encoded_prompt = urllib.parse.quote(prompt)
-            
-            # Разные стили на выбор (раскомментируйте нужный)
-            
-            # Обычный вариант
-            url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024"
-            
-            # Стиль аниме
-            # url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&model=anime"
-            
-            # Без логотипа
-            # url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
-            
-            async with session.get(url, timeout=60) as resp:
+            encoded = urllib.parse.quote(prompt)
+            url = f"https://image.pollinations.ai/prompt/{encoded}?width=512&height=512"
+            async with session.get(url, timeout=45) as resp:
                 if resp.status == 200:
-                    image_data = await resp.read()
-                    return BytesIO(image_data)
-                else:
-                    print(f"Ошибка API: {resp.status}")
-                    return None
-        except asyncio.TimeoutError:
-            print("Таймаут при генерации")
-            return None
+                    return BytesIO(await resp.read())
         except Exception as e:
             print(f"Ошибка: {e}")
-            return None
+    return None
 
 # ========== КОМАНДЫ БОТА ==========
 @dp.message(Command("start"))
 async def start(message: Message):
     await message.answer(
-        "🎨 <b>Бот генерации картинок через нейросеть</b>\n\n"
-        "✨ <b>Как работает:</b>\n"
-        "Просто отправь мне любое текстовое описание,\n"
-        "и я сгенерирую картинку с помощью ИИ!\n\n"
-        "📝 <b>Примеры запросов:</b>\n"
+        "🎨 <b>Бот генерации картинок</b>\n\n"
+        "Просто отправь описание картинки!\n\n"
+        "Примеры:\n"
         "• кот в космосе\n"
-        "• cyberpunk girl with neon hair\n"
-        "• закат на море, масляная живопись\n"
-        "• аниме девочка с синими волосами\n\n"
-        "⏱ <i>Генерация занимает 15-30 секунд</i>\n\n"
-        "Отправь /help для советов",
+        "• cyberpunk city\n"
+        "• аниме девушка",
         parse_mode="HTML"
     )
 
 @dp.message(Command("help"))
 async def help_command(message: Message):
     await message.answer(
-        "📖 <b>Советы для лучших результатов:</b>\n\n"
-        "1️⃣ <b>Пишите на английском</b>\n"
-        "   (нейросеть лучше понимает)\n\n"
-        "2️⃣ <b>Добавляйте стиль</b>\n"
-        "   realistic, anime, oil painting, cyberpunk, fantasy\n\n"
-        "3️⃣ <b>Указывайте детали</b>\n"
-        "   цвет, освещение, настроение\n\n"
-        "🔍 <b>Примеры хороших запросов:</b>\n"
-        "• <code>a cute cat wearing a spacesuit, cartoon style, 4k</code>\n"
-        "• <code>beautiful fantasy landscape with mountains and waterfall, digital art, highly detailed</code>\n"
-        "• <code>anime girl with blue hair and cat ears, studio ghibli style</code>\n"
-        "• <code>cyberpunk city at night, neon lights, rain, reflections, 8k</code>\n\n"
-        "🎨 Просто отправь текст и получи картинку!",
-        parse_mode="HTML"
-    )
-
-@dp.message(Command("styles"))
-async def styles(message: Message):
-    await message.answer(
-        "🎨 <b>Стили для генерации:</b>\n\n"
-        "Добавьте эти слова в запрос для нужного эффекта:\n\n"
-        "• <b>realistic</b> — фотореализм\n"
-        "• <b>anime</b> — аниме стиль\n"
-        "• <b>oil painting</b> — масляная живопись\n"
-        "• <b>watercolor</b> — акварель\n"
-        "• <b>cyberpunk</b> — киберпанк\n"
-        "• <b>fantasy</b> — фэнтези\n"
-        "• <b>cartoon</b> — мультяшный\n"
-        "• <b>sketch</b> — набросок\n\n"
-        "📝 <b>Пример:</b>\n"
-        "<code>dragon flying over castle, fantasy, oil painting</code>",
+        "📖 <b>Советы:</b>\n\n"
+        "• Пишите на английском\n"
+        "• Добавляйте стиль (realistic, anime)\n"
+        "• Будьте конкретны\n\n"
+        "Пример: <code>beautiful sunset ocean realistic</code>",
         parse_mode="HTML"
     )
 
 @dp.message()
-async def generate_image_command(message: Message):
+async def generate(message: Message):
     prompt = message.text.strip()
     
-    # Проверка длины запроса
     if len(prompt) < 3:
-        await message.answer("❌ Слишком короткое описание. Напишите хотя бы 3 слова.")
+        await message.answer("❌ Слишком короткое описание")
         return
     
-    # Отправляем статус "печатает/загружает"
-    await bot.send_chat_action(message.chat.id, "upload_photo")
+    status = await message.answer(f"🎨 Генерирую: {prompt[:50]}...\n⏳ 15-30 секунд")
     
-    # Отправляем сообщение о начале генерации
-    status_message = await message.answer(
-        f"🎨 <b>Генерирую картинку...</b>\n\n"
-        f"📝 Запрос: <i>{prompt[:100]}</i>\n\n"
-        f"⏳ Обычно это занимает 15-30 секунд",
-        parse_mode="HTML"
-    )
+    image = await generate_image(prompt)
     
-    # Генерируем изображение
-    image_io = await generate_image(prompt)
-    
-    if image_io:
-        # Отправляем полученное изображение
-        image_io.seek(0)
+    if image:
+        image.seek(0)
         await message.answer_photo(
-            photo=types.BufferedInputFile(image_io.getvalue(), filename="generated.png"),
-            caption=f"✨ <b>Ваша картинка готова!</b>\n\n📝 {prompt[:200]}",
-            parse_mode="HTML"
+            photo=types.BufferedInputFile(image.getvalue(), filename="image.png"),
+            caption=f"✅ {prompt[:200]}"
         )
-        # Удаляем сообщение о статусе
-        await status_message.delete()
+        await status.delete()
     else:
-        await status_message.edit_text(
-            f"❌ <b>Не удалось сгенерировать картинку</b>\n\n"
-            f"📝 Запрос: {prompt[:100]}\n\n"
-            f"<b>Возможные причины:</b>\n"
-            f"• Сервис временно перегружен\n"
-            f"• Запрос слишком сложный\n"
-            f"• Попробуйте переформулировать\n\n"
-            f"<b>Совет:</b> Попробуйте более простой запрос или напишите на английском",
-            parse_mode="HTML"
-        )
+        await status.edit_text("❌ Ошибка. Попробуйте другой запрос.")
 
-# ========== ЗАПУСК БОТА ==========
+# ========== ЗАПУСК ==========
 async def main():
-    print("=" * 50)
-    print("🎨 БОТ ГЕНЕРАЦИИ КАРТИНОК ЗАПУЩЕН")
-    print("🤖 Нейросеть: Pollinations.ai (бесплатно)")
-    print("📝 Для генерации отправьте боту любое описание")
-    print("=" * 50)
+    print("🤖 Бот запущен на Render!")
+    print(f"✅ Токен загружен из переменной окружения")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    threading.Thread(target=run_web, daemon=True).start()
     asyncio.run(main())
